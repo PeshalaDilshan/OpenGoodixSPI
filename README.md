@@ -1,4 +1,3 @@
-```id="readme_md"
 # OpenGoodixSPI
 
 Open-source experimental Linux kernel driver for Goodix SPI fingerprint sensors.
