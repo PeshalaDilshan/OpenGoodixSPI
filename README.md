@@ -1,3 +1,4 @@
+```id="readme_md"
 # OpenGoodixSPI
 
 Open-source experimental Linux kernel driver for Goodix SPI fingerprint sensors.
@@ -38,3 +39,90 @@ This is a research-driven engineering project.
 ---
 
 ## 📦 Repository Structure
+
+```
+
+driver/                  # Kernel module source
+docs/                    # Technical documentation
+reverse-engineering/     # Protocol analysis notes
+tools/                   # Debugging and logging tools
+tests/                   # Experimental validation code
+
+```
+
+---
+
+## 🔬 Development Roadmap
+
+### Phase 1 – Hardware Detection
+- Register SPI driver
+- Confirm probe and remove functions
+- Validate hardware communication
+
+### Phase 2 – Communication Layer
+- Implement spi_sync transactions
+- Log raw SPI packets
+- Identify handshake patterns
+
+### Phase 3 – Protocol Analysis
+- Map packet structure
+- Identify command types
+- Reverse engineer authentication flow
+
+### Phase 4 – User Space Interface
+- Expose character device
+- Implement ioctl controls
+- Prepare abstraction layer for libfprint
+
+### Phase 5 – Upstream Strategy
+- Code cleanup
+- Locking and concurrency audit
+- Prepare for kernel submission review
+
+---
+
+## ⚠️ Disclaimer
+
+This project is not affiliated with Goodix or Huawei.
+
+Fingerprint sensors may use encrypted communication or secure enclaves. Some devices may not be fully implementable without vendor cooperation.
+
+---
+
+## 🤝 Contributing
+
+We welcome:
+
+- Kernel developers
+- Reverse engineers
+- Embedded systems engineers
+- Security researchers
+- Testers with compatible hardware
+
+Please read CONTRIBUTING.md before submitting pull requests.
+
+---
+
+## 📜 License
+
+GPL-2.0 (required for kernel module compatibility)
+
+---
+
+## 📌 Target Hardware
+
+Primarily Huawei laptops with Goodix SPI fingerprint sensors.
+
+If you have compatible hardware, please open an issue and include:
+
+- Laptop model
+- Kernel version
+- `dmesg` output
+- SPI device ID
+
+---
+
+## 🔥 Vision
+
+Long-term goal: achieve stable upstream Linux support for unsupported Goodix SPI fingerprint devices.
+```
