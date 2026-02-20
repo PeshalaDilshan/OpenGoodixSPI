@@ -123,5 +123,5 @@ If you have compatible hardware, please open an issue and include:
 
 ## 🔥 Vision
 
-Long-term goal: achieve stable upstream Linux support for unsupported Goodix SPI fingerprint devices.
-```
+“A structured effort to bridge unsupported biometric hardware into the Linux ecosystem through open, maintainable kernel engineering.”
+
