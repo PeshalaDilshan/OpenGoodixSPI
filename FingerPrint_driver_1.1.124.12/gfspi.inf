@@ -1,0 +1,223 @@
+;/*
+;   Copyright(C) 2011-2018 Shenzhen Goodix Technology Co., Ltd. All Rights Reserved.
+
+;   The source code, information and material ("Material") contained herein is owned by 
+;   Shenzhen Goodix Technology Co., Ltd.("Goodix") or its suppliers or licensors, and title 
+;   to such Material remains with Goodix or its suppliers or licensors. The Material contains
+;   proprietary information of Goodix or its suppliers and licensors. The Material is protected
+;   by worldwide copyright laws and treaty provisions. No  part of the Material may be used,
+;   copied, reproduced, modified, published, uploaded, posted, transmitted, distributed or 
+;   disclosed in any way without Goodix's prior express written permission. No license under
+;   any patent, copyright or other intellectual property rights in the Material is granted to or 
+;   conferred upon you, either expressly, by implication, inducement, estoppel or otherwise.
+;   Any license under such intellectual property rights must be express and approved by Goodix 
+;   in writing.
+
+;   *Third Party trademarks are the property of their respective owners.
+
+;   Unless otherwise agreed by Goodix in writing, you may not remove or alter this notice or any
+;   other notice embedded in Materials by Goodix or Goodix's suppliers or licensors in any way.
+;
+;*/
+
+[Version]
+Signature="$Windows NT$"
+Class=Biometric ; TODO: edit Class
+ClassGuid={53D29EF7-377C-4D14-864B-EB3A85769359} ; TODO: edit ClassGuid
+Provider=%ManufacturerName%
+CatalogFile=gfspi.cat
+DriverVer = 12/10/2020,1.1.124.12
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64
+
+[Standard.NTamd64]
+;%DeviceName%=MyDevice_Install, ACPI\GXFP5117 ; TODO: edit hw-id
+;%DeviceName%=MyDevice_Install, USB\VID_27C6&PID_5117, USB\VID_27C6&PID_5110, USB\VID_27C6&PID_5130
+%DeviceName%=MyDevice_Install, USB\VID_27C6&PID_5117
+%DeviceName%=MyDevice_Install, USB\VID_27C6&PID_5110
+%DeviceName%=MyDevice_Install, USB\VID_27C6&PID_5130
+
+
+[SourceDisksFiles]
+gfspi.dll=1
+EngineAdapter.dll=1 ; Vendor engine adapter
+AlgoChicago.dll=1
+AlgoMilan.dll=1
+GoodixEventLog.dll=1
+SessionService.exe=1
+
+[SourceDisksNames]
+1 = %DiskName%
+
+; =================== UMDF Device ==================================
+
+[MyDevice_Install.NT]
+;DriverVer = 11/03/2020,1.1.121.1
+;FeatureScore=0x00 ; might cause a restart
+CopyFiles=UMDriverCopy, WinBioGoodixPluginsCopy, DependLibsCopy
+;CopyFiles=UMDriverCopy, WinBioGoodixPluginsCopy, DependLibsCopy, ProgramDataCopy
+CopyFiles=SvcCopyFiles
+AddProperty=Device_Properties    
+Include=WINUSB.INF            ; Import sections from WINUSB.INF
+Needs=WINUSB.NT               ; Run the CopyFiles & AddReg directives for WinUsb.INF
+
+[MyDevice_Install.NT.hw]
+AddReg=Biometric_Device_AddReg
+AddReg=DriverPlugInAddReg, DatabaseAddReg, ETWEventLogAddReg
+
+[MyDevice_Install.NT.Services]
+AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
+AddService=SessionSvc,0x00000800,SvcName_ServicceInstall
+;AddService=WinUsb,0x000001f8,WinUsb_ServiceInstall 
+
+
+[MyDevice_Install.NT.Wdf]
+UmdfDispatcher=NativeUSB
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+
+UmdfService=gfspi,gfspi_Install
+UmdfServiceOrder=gfspi
+UmdfImpersonationLevel=Impersonation
+
+; this enables direct hardware access from UMDF driver
+UmdfDirectHardwareAccess=AllowDirectHardwareAccess
+
+; direct i/o devices cannot run in default pool.
+UmdfHostProcessSharing=ProcessSharingDisabled
+
+[Device_Properties]
+DeviceIcon,,,,"%%SYSTEMROOT%%\system32\SysClass.dll,-201" ; This is where a device specific icon can be specified.
+
+[gfspi_Install]
+UmdfLibraryVersion=2.15.0 
+ServiceBinary=%12%\UMDF\gfspi.dll
+
+[Biometric_Device_AddReg]
+HKR,,"DeviceCharacteristics",0x10001,0x0100     ; Use same security checks on relative opens
+HKR,,"Security",,"D:P(A;;GA;;;BA)(A;;GA;;;SY)"  ; Allow generic-all access to Built-in administrators and Local system
+;HKR,,"LowerFilters",0x00010008,"WinUsb"         ; FLG_ADDREG_TYPE_MULTI_SZ | FLG_ADDREG_APPEND
+HKR,,"WinUsbPowerPolicyOwnershipDisabled",0x00010001,1
+HKR,,"Exclusive",0x10001,1
+;HKR,,"SystemWakeEnabled",0x00010001,1
+HKR,,"DeviceIdleEnabled",0x00010001,1
+;HKR,,"UserSetDeviceIdleEnabled",0x00010001,1
+HKR,,"DefaultIdleState",0x00010001,1
+HKR,,"DefaultIdleTimeout",0x00010001,5000
+HKR,WudfPowerPolicysettings,"WdfDefaultWakeFromSleepState",0x00010001,1
+
+[DriverPlugInAddReg]
+HKR,WinBio\Configurations,DefaultConfiguration,,"0"
+HKR,WinBio\Configurations\0,SensorMode,0x10001,1                                ; Basic - 1, Advanced - 2
+HKR,WinBio\Configurations\0,SystemSensor,0x10001,1                              ; UAC/Winlogon - 1
+HKR,WinBio\Configurations\0,SensorAdapterBinary,,"WinBioSensorAdapter.DLL"      ; Windows built-in WBDI sensor adapter.
+HKR,WinBio\Configurations\0,EngineAdapterBinary,,"EngineAdapter.DLL"            ; Vendor engine
+HKR,WinBio\Configurations\0,StorageAdapterBinary,,"WinBioStorageAdapter.DLL"    ; Windows built-in storage adapter
+HKR,WinBio\Configurations\0,DatabaseId,,"6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50"  ; Unique database GUID
+
+[DatabaseAddReg]
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},BiometricType,0x00010001,0x00000008
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},Attributes,0x00010001,0x00000001
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},Format,,"00000000-0000-0000-0000-000000000000"
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},InitialSize,0x00010001,0x00000020
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},AutoCreate,0x00010001,0x00000001
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},AutoName,0x00010001,0x00000001
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},FilePath,,""
+HKLM,System\CurrentControlSet\Services\WbioSrvc\Databases\{6E9D4C5A-55B4-4c52-90B7-DDDC75CA4D50},ConnectionString,,""
+
+[ETWEventLogAddReg]
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Channels\Goodix-FingerprintProvider/Debug,OwningPublisher,,"{5be7f79a-d41d-4368-a72f-384887243344}"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Channels\Goodix-FingerprintProvider/Debug,Enabled,0x00010001,1
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Channels\Goodix-FingerprintProvider/Debug,MaxSize,0x00010001,20971520 ;1073741824(1G:1024*1024*1024), 20971520(20M:20*1024*1024)
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Channels\Goodix-FingerprintProvider/Debug,Isolation,0x00010001,0
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Channels\Goodix-FingerprintProvider/Debug,ChannelAccess,,"O:BAG:SYD:(A;;0x2;;;S-1-15-2-1)(A;;0x2;;;S-1-15-3-1024-3153509613-960666767-3724611135-2725662640-12138253-543910227-1950414635-4190290187)(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x7;;;SO)(A;;0x3;;;IU)(A;;0x3;;;SU)(A;;0x3;;;S-1-5-3)(A;;0x3;;;S-1-5-33)(A;;0x1;;;S-1-5-32-573)"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Channels\Goodix-FingerprintProvider/Debug,Type,0x00010001,0
+
+
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344},,0x00000000,"Goodix"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344},"ResourceFileName",0x00020000,"%%SYSTEMROOT%%\system32\GoodixEventLog.dll"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344},"MessageFileName",0x00020000,"%%SYSTEMROOT%%\system32\GoodixEventLog.dll"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344},"Enabled",0x00010001,1
+
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344}\ChannelReferences,"Count",0x00010001,1
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344}\ChannelReferences\0,,,"Goodix-FingerprintProvider/Debug"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344}\ChannelReferences\0,"Id",0x00010001,16
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\WINEVT\Publishers\{5be7f79a-d41d-4368-a72f-384887243344}\ChannelReferences\0,"Flags",0x00010001,1
+
+HKLM,SYSTEM\CurrentControlSet\Control\WMI\Autologger\EventLog-Application\{5be7f79a-d41d-4368-a72f-384887243344},"Enabled",0x00010001,1
+HKLM,SYSTEM\CurrentControlSet\Control\WMI\Autologger\EventLog-Application\{5be7f79a-d41d-4368-a72f-384887243344},"EnableLevel",0x00010001,0
+HKLM,SYSTEM\CurrentControlSet\Control\WMI\Autologger\EventLog-Application\{5be7f79a-d41d-4368-a72f-384887243344},"LoggerName",0x00000000,"EventLog-Application"
+HKLM,SYSTEM\CurrentControlSet\Control\WMI\Autologger\EventLog-Application\{5be7f79a-d41d-4368-a72f-384887243344},"MatchAnyKeyword",0x000B0001,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+HKLM,SYSTEM\CurrentControlSet\Control\WMI\Autologger\EventLog-Application\{5be7f79a-d41d-4368-a72f-384887243344},"MatchAllKeyword",0x000B0001,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+HKLM,SYSTEM\CurrentControlSet\Control\WMI\Autologger\EventLog-Application\{5be7f79a-d41d-4368-a72f-384887243344},"EnableProperty",0x00010001,1
+
+HKLM,SYSTEM\CurrentControlSet\Services\EventLog\Application\Goodix,"ProviderGuid",0x00000000,"{5be7f79a-d41d-4368-a72f-384887243344}"
+HKLM,SYSTEM\CurrentControlSet\Services\EventLog\Application\Goodix,"EventMessageFile",0x00020000,"%%SYSTEMROOT%%\system32\GoodixEventLog.dll"
+
+
+[WUDFRD_ServiceInstall]
+DisplayName = %WudfRdDisplayName%
+ServiceType = 1
+StartType = 3
+ErrorControl = 1
+ServiceBinary = %12%\WUDFRd.sys
+;LoadOrderGroup = Base
+
+[SvcName_ServicceInstall]
+DisplayName = %SessionDetection%
+ServiceType = 0x00000010
+StartType = 2
+ErrorControl = 1
+ServiceBinary = %12%\SessionService.exe
+
+[WinUsb_ServiceInstall]   
+DisplayName = %WinUsb_SvcDesc%
+ServiceType = 1
+StartType = 3
+ErrorControl = 1
+ServiceBinary = %12%\WinUSB.sys
+
+[DestinationDirs]
+UMDriverCopy=12,UMDF ; copy to drivers\umdf
+WinBioGoodixPluginsCopy=11,WinBioPlugins ; copy to \Windows\System32\WinBioPlugins
+DependLibsCopy=11
+;ProgramDataCopy=24,ProgramData
+SvcCopyFiles=12
+
+[UMDriverCopy]
+gfspi.dll
+
+[SvcCopyFiles]
+SessionService.exe
+
+[WinBioGoodixPluginsCopy]
+EngineAdapter.dll
+AlgoChicago.dll
+AlgoMilan.dll
+
+[DependLibsCopy]
+GoodixEventLog.dll
+
+;[ProgramDataCopy]
+
+[SignatureAttributes]
+;gfspi.dll = SignatureAttributes.WindowsHello
+EngineAdapter.dll = SignatureAttributes.WindowsHello
+AlgoChicago.dll = SignatureAttributes.WindowsHello
+AlgoMilan.dll = SignatureAttributes.WindowsHello
+GoodixEventLog.dll = SignatureAttributes.WindowsHello
+
+[SignatureAttributes.WindowsHello]
+WindowsHello = true
+
+
+; =================== Generic ==================================
+
+[Strings]
+ManufacturerName="Goodix FP" ;TODO: Replace with your manufacturer name
+ClassName="Biometric Devices" ; TODO: edit ClassName
+DiskName = "gfspi Installation Disk"
+SessionDetection = "Session Detection"
+WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"
+WinUsb_SvcDesc="WinUSB Driver"
+DeviceName="Goodix Fingerprint USB Device"

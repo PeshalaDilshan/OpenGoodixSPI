@@ -15,4 +15,3 @@ MOK.der
 __pycache__/
 
 # Windows Driver Artifacts
-FingerPrint_driver_*/
