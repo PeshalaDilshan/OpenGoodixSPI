@@ -1,6 +1,8 @@
 # OpenGoodixSPI
 
-Open-source experimental Linux kernel driver for Goodix SPI fingerprint sensors.
+This project is an experimental, open-source Linux kernel driver for Goodix SPI fingerprint sensors found in many Huawei MateBooks and other laptops.
+
+**The original author has postponed development. The codebase is stable, compiles, and loads, but requires specific protocol reverse-engineering to become functional. We welcome any contributors to pick up the torch!**
 
 ## 🎯 Mission
 
@@ -15,7 +17,7 @@ This is a research-driven engineering project.
 
 ---
 
-## 🧩 Current Status
+## 🧩 Current Technical Status
 
 - [x] **Device detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` registered.
 - [x] **SPI probe**: Driver loads, allocates resources, and communicates.
@@ -25,32 +27,56 @@ This is a research-driven engineering project.
 - [x] **Protocol Discovery**: Identified Wake (`0xB0`) and Chip ID (`0xF0`) commands.
 - [x] **Driver Engine**: State machine implemented (Bootloader/Ready/Error).
 - [x] **IOCTL Interface**: User-space control for state queries and resets.
-- [ ] **Firmware Loading**: Driver requests `goodix_fp.bin`, upload logic is WIP.
+- [ ] **Firmware Loading**: Skeleton implemented. Needs protocol headers from `analyze_log.py`.
 - [ ] libfprint integration layer
 
+### ✅ What Works
+- **Device Detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` are registered.
+- **SPI Subsystem**: Driver loads, probes, and establishes SPI communication (Mode 0).
+- **Interrupts**: IRQ handler is registered and fires on sensor touch.
+- **Character Device**: `/dev/opengoodixspi` exists for user-space interaction.
+- **Debug Interface**: `/sys/kernel/debug/opengoodixspi/spi_log` provides real-time traffic logging.
+- **IOCTLs**: Custom IOCTLs implemented to query driver state and force resets.
+- **Firmware Request**: The driver requests `goodix_fp.bin` from `/lib/firmware`.
+
+### ❌ What is Missing
+- **Firmware Upload Logic**: The driver loads the binary into memory but does not know *how* to send it to the chip (chunk headers, commands, checksums).
+- **Image Capture**: Once initialized, logic to read the fingerprint image is needed.
+
 ---
 
-## 🛠 Technical Stack
+## 🛠️ Getting Started
 
+### 1. Prerequisites
 - Linux Kernel 6.x+
-- SPI subsystem
-- Character device interface
-- ACPI / Device Tree matching
-- C (kernel-space)
+- GCC and Make
+- Secure Boot disabled (or you must sign the module manually)
 
----
-
-## 📦 Repository Structure
-
+### 2. Build and Load
+```bash
+cd driver
+make
+# If you have your own signing keys setup:
+# make sign
+sudo make load
 ```
 
-driver/                  # Kernel module source
-docs/                    # Technical documentation
-reverse-engineering/     # Protocol analysis notes
-tools/                   # Debugging and logging tools
-tests/                   # Experimental validation code
-
-```
+### 3. Install Firmware
+The driver requires the proprietary firmware from the Windows driver.
+1.  Locate the Windows driver files (usually `C:\Windows\System32\DriverStore\FileRepository\...\gfspi.dll` or `AlgoMilan.dll`).
+2.  Use the extraction tool:
+    ```bash
+    python3 tools/find_firmware.py <path_to_dll>
+    ```
+3.  Copy the extracted file (usually ~128KB) to the system path:
+    ```bash
+    sudo cp <extracted_file> /lib/firmware/goodix_fp.bin
+    ```
+4.  Reload the driver:
+    ```bash
+    sudo rmmod opengoodixspi
+    sudo insmod opengoodixspi.ko
+    ```
 
 ---
 
@@ -75,24 +101,35 @@ tests/                   # Experimental validation code
 
 ---
 
-## 📦 Firmware Installation
+## 🕵️ How to Contribute (The "Missing Link")
 
-The driver now expects a firmware file to be present.
+The immediate goal is to implement the **Firmware Upload Protocol**.
 
-1. **Extract**: Use `tools/find_firmware.py` on the Windows driver DLLs.
-2. **Install**: Copy the extracted blob to the system firmware directory:
-   ```bash
-   sudo cp <extracted_firmware> /lib/firmware/goodix_fp.bin
-   ```
-3. **Reload**: `make load` (or `modprobe opengoodixspi`).
+### Step 1: Capture Windows Traffic
+You need a traffic log of the sensor initializing on Windows.
+- **Option A**: Use a hardware logic analyzer on the SPI lines (Best).
+- **Option B**: Use Wireshark with USBPcap if the SPI controller is USB-attached (Rare for these sensors).
+- **Option C**: Use a software filter driver on Windows (Advanced).
 
 ---
+
+## 🕵️ Protocol Analysis Workflow
+
+To implement the firmware upload, we need to find the specific command headers used by the Windows driver.
+
+1. **Capture**: Obtain a traffic log from Windows (Wireshark USB capture or Logic Analyzer).
+2. **Analyze**: Run the analyzer tool:
+   ```bash
+   python3 tools/analyze_log.py <path_to_log.txt> <path_to_firmware.bin>
+   ```
+3. **Implement**: The tool will identify the header bytes (e.g., `F1 00 ...`). Use these to fill the `TODO` section in `driver/opengoodixspi.c`.
 
 ## 🔬 Next Steps for Contributors
 
 1. **Extract Firmware**: Use `tools/find_firmware.py` on the Windows driver DLLs to locate the firmware blob.
-2. **Implement Upload**: Reverse engineer the upload protocol (likely chunked writes to a specific address).
-3. **Analyze Handshake**: Once firmware is loaded, the device should respond to more commands.
+2. **Analyze Protocol**: Use `tools/analyze_log.py` with a Windows traffic log to identify the firmware upload headers.
+3. **Implement Upload**: Update `opengoodix_load_firmware` in the driver to send the firmware in chunks.
+4. **Analyze Handshake**: Once firmware is loaded, the device should respond to more commands.
 
 ### Phase 4 – User Space Interface
 - Expose character device
@@ -112,12 +149,26 @@ To capture live traffic from the sensor, you need two terminal windows.
 
 **Terminal 1: The Monitor** (Watches SPI traffic)
 ```bash
-sudo python3 tools/live_monitor.py
+python3 tools/analyze_log.py <windows_log.txt> <extracted_firmware.bin>
+```
+*Output Example:*
+```text
+✅ Match at FW Offset 0x0000
+   Log Offset: 0x001040
+   Header: F1 00 00 00  <-- THIS IS WHAT WE NEED
 ```
 
-**Terminal 2: The Trigger** (Waits for interrupts and reads data)
-```bash
-sudo python3 tools/trigger_read.py
+### Step 3: Update the Driver
+Open `driver/opengoodixspi.c` and find `opengoodix_load_firmware`.
+Update the `TODO` section with the header format you found.
+
+```c
+/* Example: If header is F1 <AddrH> <AddrL> 00 */
+tx[0] = 0xF1;
+tx[1] = (offset >> 8) & 0xFF;
+tx[2] = offset & 0xFF;
+tx[3] = 0x00;
+memcpy(&tx[4], fw->data + offset, payload_len);
 ```
 
 Once both are running, touch the fingerprint sensor. You should see "Touch detected" in Terminal 2 and hex dumps in Terminal 1.
@@ -126,14 +177,16 @@ Once both are running, touch the fingerprint sensor. You should see "Touch detec
 
 ## 🛠 Reverse Engineering Tools
 
-- `tools/live_monitor.py`: Real-time SPI traffic viewer (reads from debugfs).
-- `tools/send_command.py`: Send raw hex bytes to the sensor.
-- `tools/scan_commands.py`: Brute-force scan for valid command opcodes.
-- `tools/scan_addresses.py`: Scan memory addresses for data.
-- `tools/dump_chip_id.py`: Targeted script to read Chip ID (0xF0).
-- `tools/deep_scan.py`: Fuzzing tool to find control registers.
-- `tools/get_state.py`: Query driver state and force reset via IOCTL.
-- `tools/find_firmware.py`: Scans Windows DLLs for embedded firmware blobs.
+The `tools/` directory contains Python scripts to aid reverse engineering:
+
+| Tool | Description |
+| :--- | :--- |
+| `live_monitor.py` | Reads `/sys/kernel/debug/.../spi_log` to show live traffic. |
+| `get_state.py` | Uses IOCTL to check if driver is in `BOOTLOADER` or `READY` state. |
+| `find_firmware.py` | Scans Windows DLLs for "GxFw" signatures. |
+| `analyze_log.py` | Finds firmware chunks in traffic logs to deduce protocol. |
+| `send_command.py` | Sends raw hex bytes to the device via `/dev/opengoodixspi`. |
+| `scan_addresses.py` | Brute-forces read commands to find valid registers. |
 
 ---
 

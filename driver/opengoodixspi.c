@@ -379,6 +379,8 @@ static int opengoodix_reset_device(struct opengoodix_data *data)
 static int opengoodix_load_firmware(struct opengoodix_data *data)
 {
 	const struct firmware *fw;
+	size_t offset, chunk_size, payload_len;
+	u8 *tx = data->tx_buf;
 	int ret;
 
 	dev_info(data->dev, "Requesting firmware: goodix_fp.bin\n");
@@ -388,10 +390,57 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
 		return ret;
 	}
 
-	dev_info(data->dev, "Firmware found, size: %zu bytes. (Upload logic TODO)\n", fw->size);
+	dev_info(data->dev, "Firmware found, size: %zu bytes. Starting upload...\n", fw->size);
 
 	/*
-	 * TODO: Implement the chunked upload loop here using fw->data.
+	 * TODO: Configure Chunk Size
+	 * Check analyze_log.py output. Common values: 64, 128, 256.
+	 */
+	chunk_size = 128;
+
+	for (offset = 0; offset < fw->size; offset += chunk_size) {
+		payload_len = min(chunk_size, fw->size - offset);
+
+		/*
+		 * TODO: REVERSE ENGINEERED PROTOCOL GOES HERE
+		 * Use the 'tx' buffer to construct the packet.
+		 *
+		 * Example Structure (Uncomment and adjust after analysis):
+		 *
+		 * tx[0] = 0xF1;                 // Write Command (Guess)
+		 * tx[1] = (offset >> 8) & 0xFF; // Address High
+		 * tx[2] = offset & 0xFF;        // Address Low
+		 * tx[3] = 0x00;                 // Padding?
+		 * memcpy(&tx[4], fw->data + offset, payload_len);
+		 *
+		 * ret = opengoodix_spi_xfer(data, 4 + payload_len);
+		 * if (ret) {
+		 *     dev_err(data->dev, "Upload failed at %zu\n", offset);
+		 *     break;
+		 * }
+		 */
+	}
+
+	/*
+	 * TODO: Handshake / Checksum Verification
+	 * After uploading, the driver usually sends a command to tell the chip
+	 * to verify the checksum and boot the firmware.
+	 *
+	 * 1. Send Finalize Command (e.g., 0xA0 or specific register write)
+	 * 2. Poll Status Register (e.g., read 0x00 repeatedly until 0x01 is returned)
+	 */
+	
+	/* Example Placeholder (based on common Goodix behavior):
+	 * dev_info(data->dev, "Verifying firmware checksum...\n");
+	 *
+	 * // Poll loop
+	 * for (int i = 0; i < 50; i++) {
+	 *     // Send Status Read Command (e.g., 0x80 00)
+	 *     // if (rx[1] == 0x01) break;
+	 *     msleep(20);
+	 * }
+	 *
+	 * dev_info(data->dev, "Firmware verified and booted!\n");
 	 */
 	
 	release_firmware(fw);
