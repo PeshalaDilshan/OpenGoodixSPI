@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "Linux Kernel",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/src/linux-headers-6.17.0-14-generic/include",
+                "/usr/src/linux-headers-6.17.0-14-generic/arch/x86/include",
+                "/usr/src/linux-headers-6.17.0-14-generic/include/uapi",
+                "/usr/src/linux-headers-6.17.0-14-generic/arch/x86/include/uapi",
+                "/usr/src/linux-headers-6.17.0-14-generic/arch/x86/include/generated"
+            ],
+            "defines": [
+                "__KERNEL__",
+                "MODULE"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

@@ -80,6 +80,36 @@ tests/                   # Experimental validation code
 
 ---
 
+## 🧪 Testing & Debugging
+
+To capture live traffic from the sensor, you need two terminal windows.
+
+**Terminal 1: The Monitor** (Watches SPI traffic)
+```bash
+sudo python3 tools/live_monitor.py
+```
+
+**Terminal 2: The Trigger** (Waits for interrupts and reads data)
+```bash
+sudo python3 tools/trigger_read.py
+```
+
+Once both are running, touch the fingerprint sensor. You should see "Touch detected" in Terminal 2 and hex dumps in Terminal 1.
+
+---
+
+## 🛠 Reverse Engineering Tools
+
+- `tools/live_monitor.py`: Real-time SPI traffic viewer.
+- `tools/send_command.py`: Send raw hex bytes to the sensor.
+- `tools/scan_commands.py`: Brute-force scan for valid command opcodes.
+- `tools/scan_addresses.py`: Scan memory addresses for data.
+- `tools/dump_chip_id.py`: Targeted script to read Chip ID (0xF0).
+- `tools/deep_scan.py`: Fuzzing tool to find control registers.
+- `tools/find_firmware.py`: Scans Windows DLLs for embedded firmware blobs.
+
+---
+
 ## ⚠️ Disclaimer
 
 This project is not affiliated with Goodix or Huawei.
@@ -124,4 +154,3 @@ If you have compatible hardware, please open an issue and include:
 ## 🔥 Vision
 
 “A structured effort to bridge unsupported biometric hardware into the Linux ecosystem through open, maintainable kernel engineering.”
-

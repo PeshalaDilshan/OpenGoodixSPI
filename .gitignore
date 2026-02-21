@@ -1,0 +1,18 @@
+# Kernel build artifacts
+*.ko
+*.mod
+*.mod.c
+*.o
+modules.order
+Module.symvers
+.*.cmd
+
+# Private Signing Keys (IMPORTANT)
+MOK.priv
+MOK.der
+
+# Python
+__pycache__/
+
+# Windows Driver Artifacts
+FingerPrint_driver_*/
