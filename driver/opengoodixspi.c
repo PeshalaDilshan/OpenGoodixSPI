@@ -23,6 +23,10 @@
 #include <linux/kfifo.h>
 #include <linux/wait.h>
 #include <linux/poll.h>
+#include <linux/firmware.h>
+#include <linux/delay.h>
+
+#include "opengoodix.h"
 
 #define DRIVER_NAME "opengoodixspi"
 #define DRIVER_CLASS "opengoodix"
@@ -40,6 +44,13 @@ MODULE_PARM_DESC(debug_enabled, "Enable debug logging");
 #define GOODIX_CMD_WAKE     0xB0
 #define GOODIX_CMD_CHIP_ID  0xF0
 
+enum opengoodix_state {
+	STATE_UNINITIALIZED,
+	STATE_BOOTLOADER,
+	STATE_READY,
+	STATE_ERROR,
+};
+
 /*
  * struct opengoodix_data - Private driver context
  * @spi: Pointer to the SPI device
@@ -56,6 +67,8 @@ MODULE_PARM_DESC(debug_enabled, "Enable debug logging");
  * @log_lock: Spinlock for log_fifo
  * @wq: Wait queue for blocking reads
  * @data_ready: Flag indicating data availability
+ * @state: Current state of the driver engine
+ * @firmware_loaded: Flag indicating if firmware has been loaded
  */
 struct opengoodix_data {
 	struct spi_device *spi;
@@ -81,8 +94,15 @@ struct opengoodix_data {
 	/* Data buffers (DMA safe) */
 	u8 *tx_buf;
 	u8 *rx_buf;
+
+	enum opengoodix_state state;
+	bool firmware_loaded;
 	size_t last_read_len;
 };
+
+/* Forward declarations */
+static int opengoodix_reset_device(struct opengoodix_data *data);
+static int opengoodix_check_chip_state(struct opengoodix_data *data);
 
 /*
  * -------------------------------------------------------------------------
@@ -211,6 +231,12 @@ static ssize_t opengoodix_read(struct file *file, char __user *buf,
 	struct opengoodix_data *data = file->private_data;
 	ssize_t ret;
 
+	if (data->state != STATE_READY) {
+		dev_warn_ratelimited(data->dev,
+				     "Read attempted but device not ready (state=%d)\n",
+				     data->state);
+		return -EBUSY;
+	}
 	/* TODO: In the future, this might trigger a new capture or read from a ring buffer */
 
 	if (file->f_flags & O_NONBLOCK) {
@@ -296,18 +322,109 @@ static __poll_t opengoodix_poll(struct file *file, poll_table *wait)
 	return mask;
 }
 
+static long opengoodix_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct opengoodix_data *data = file->private_data;
+	int __user *argp = (int __user *)arg;
+
+	switch (cmd) {
+	case GOODIX_IOC_GET_STATE:
+		if (put_user(data->state, argp))
+			return -EFAULT;
+		break;
+	case GOODIX_IOC_RESET:
+		mutex_lock(&data->lock);
+		opengoodix_reset_device(data);
+		opengoodix_check_chip_state(data);
+		mutex_unlock(&data->lock);
+		break;
+	default:
+		return -ENOTTY;
+	}
+	return 0;
+}
+
 static const struct file_operations opengoodix_fops = {
 	.owner = THIS_MODULE,
 	.open = opengoodix_open,
 	.release = opengoodix_release,
 	.read = opengoodix_read,
 	.write = opengoodix_write,
+	.unlocked_ioctl = opengoodix_ioctl,
+	.compat_ioctl = opengoodix_ioctl,
 	.poll = opengoodix_poll,
 };
 
 /*
  * -------------------------------------------------------------------------
  * SPI Driver Lifecycle
+ * -------------------------------------------------------------------------
+ */
+
+static int opengoodix_reset_device(struct opengoodix_data *data)
+{
+	int ret;
+
+	dev_info(data->dev, "Resetting device...\n");
+	memset(data->tx_buf, GOODIX_CMD_RESET, 4);
+	ret = opengoodix_spi_xfer(data, 4);
+	if (ret)
+		return ret;
+
+	/* Give the chip time to reset */
+	msleep(20);
+	return 0;
+}
+
+static int opengoodix_load_firmware(struct opengoodix_data *data)
+{
+	const struct firmware *fw;
+	int ret;
+
+	dev_info(data->dev, "Requesting firmware: goodix_fp.bin\n");
+	ret = request_firmware(&fw, "goodix_fp.bin", data->dev);
+	if (ret) {
+		dev_warn(data->dev, "Firmware 'goodix_fp.bin' not found (err=%d). Device may not function.\n", ret);
+		return ret;
+	}
+
+	dev_info(data->dev, "Firmware found, size: %zu bytes. (Upload logic TODO)\n", fw->size);
+
+	/*
+	 * TODO: Implement the chunked upload loop here using fw->data.
+	 */
+	
+	release_firmware(fw);
+	return 0;
+}
+
+static int opengoodix_check_chip_state(struct opengoodix_data *data)
+{
+	int ret;
+
+	/* Send CHIP_ID command */
+	memset(data->tx_buf, GOODIX_CMD_CHIP_ID, 4);
+	ret = opengoodix_spi_xfer(data, 4);
+	if (ret)
+		return ret;
+
+	/*
+	 * Heuristic: If the response is all 0s or all Fs, it's in bootloader mode.
+	 * A real response would be something like 00 F0 10 00.
+	 */
+	if ((data->rx_buf[0] == 0x00 && data->rx_buf[1] == 0x00) ||
+	    (data->rx_buf[0] == 0xFF && data->rx_buf[1] == 0xFF)) {
+		dev_info(data->dev, "Device appears to be in bootloader mode.\n");
+		data->state = STATE_BOOTLOADER;
+	} else {
+		dev_info(data->dev, "Device appears to be initialized. Chip ID: %*ph\n", 4, data->rx_buf);
+		data->state = STATE_READY;
+		data->firmware_loaded = true; /* Assume loaded if not in bootloader */
+	}
+	return 0;
+}
+
+/*
  * -------------------------------------------------------------------------
  */
 
@@ -337,6 +454,7 @@ static int opengoodix_probe(struct spi_device *spi)
 	data->spi = spi;
 	data->dev = dev;
 	mutex_init(&data->lock);
+	data->state = STATE_UNINITIALIZED;
 
 	/* Configure SPI Mode 0 (Standard for Goodix) */
 	spi->mode = SPI_MODE_0;
@@ -409,25 +527,22 @@ static int opengoodix_probe(struct spi_device *spi)
 			dev_err(dev, "Failed to request IRQ\n");
 	}
 
-	/* 4. Perform Test Transaction */
+	/* 4. Initialize Driver Engine and check device state */
 	mutex_lock(&data->lock);
-	
-	/* 
-	 * TODO: Firmware Load Required
-	 * The sensor responds to 0xB0 (Wake) and 0xF0 (Chip ID) but returns 0x00
-	 * for most registers. This suggests it is in "Bootloader" mode and needs
-	 * firmware uploaded before it will function as a biometric device.
-	 */
-	memset(data->tx_buf, GOODIX_CMD_CHIP_ID, 4); 
-	
-	ret = opengoodix_spi_xfer(data, 4);
-	if (ret == 0) {
-		data->last_read_len = 4;
+
+	ret = opengoodix_check_chip_state(data);
+	if (ret) {
+		data->state = STATE_ERROR;
+		dev_err(dev, "Failed to check chip state\n");
+		/* Don't fail probe, user might be able to fix via write/ioctl */
 	}
-	
+
+	if (data->state == STATE_BOOTLOADER)
+		opengoodix_load_firmware(data);
+
 	mutex_unlock(&data->lock);
 
-	dev_info(dev, "OpenGoodixSPI initialized successfully\n");
+	dev_info(dev, "OpenGoodixSPI initialized. Current state: %d\n", data->state);
 	return 0;
 
 err_destroy_class:

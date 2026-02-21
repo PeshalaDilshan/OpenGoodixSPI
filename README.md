@@ -23,7 +23,9 @@ This is a research-driven engineering project.
 - [x] **Debug Interface**: `debugfs` logging of raw SPI packets.
 - [x] **User Space**: Character device `/dev/opengoodixspi` for read/write.
 - [x] **Protocol Discovery**: Identified Wake (`0xB0`) and Chip ID (`0xF0`) commands.
-- [ ] **Firmware Loading**: Logic to parse and upload firmware is missing.
+- [x] **Driver Engine**: State machine implemented (Bootloader/Ready/Error).
+- [x] **IOCTL Interface**: User-space control for state queries and resets.
+- [ ] **Firmware Loading**: Driver requests `goodix_fp.bin`, upload logic is WIP.
 - [ ] libfprint integration layer
 
 ---
@@ -73,6 +75,19 @@ tests/                   # Experimental validation code
 
 ---
 
+## 📦 Firmware Installation
+
+The driver now expects a firmware file to be present.
+
+1. **Extract**: Use `tools/find_firmware.py` on the Windows driver DLLs.
+2. **Install**: Copy the extracted blob to the system firmware directory:
+   ```bash
+   sudo cp <extracted_firmware> /lib/firmware/goodix_fp.bin
+   ```
+3. **Reload**: `make load` (or `modprobe opengoodixspi`).
+
+---
+
 ## 🔬 Next Steps for Contributors
 
 1. **Extract Firmware**: Use `tools/find_firmware.py` on the Windows driver DLLs to locate the firmware blob.
@@ -117,6 +132,7 @@ Once both are running, touch the fingerprint sensor. You should see "Touch detec
 - `tools/scan_addresses.py`: Scan memory addresses for data.
 - `tools/dump_chip_id.py`: Targeted script to read Chip ID (0xF0).
 - `tools/deep_scan.py`: Fuzzing tool to find control registers.
+- `tools/get_state.py`: Query driver state and force reset via IOCTL.
 - `tools/find_firmware.py`: Scans Windows DLLs for embedded firmware blobs.
 
 ---
