@@ -19,29 +19,22 @@ This is a research-driven engineering project.
 
 ## 🧩 Current Technical Status
 
-- [x] **Device detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` registered.
-- [x] **SPI probe**: Driver loads, allocates resources, and communicates.
-- [x] **Interrupt handling**: IRQ detected and handler registered.
-- [x] **Debug Interface**: `debugfs` logging of raw SPI packets.
-- [x] **User Space**: Character device `/dev/opengoodixspi` for read/write.
+### ✅ What Works
+- [x] Device Detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` are registered.
+- [x] **SPI Subsystem**: Driver loads, probes, and establishes SPI communication (Mode 0).
+- [x] **Interrupt handling**: IRQ handler is registered and fires on sensor touch.
+- [x] **Debug Interface**: `/sys/kernel/debug/opengoodixspi/spi_log` provides real-time traffic logging.
+- [x] **Character Device**: `/dev/opengoodixspi` exists for user-space interaction.
 - [x] **Protocol Discovery**: Identified Wake (`0xB0`) and Chip ID (`0xF0`) commands.
 - [x] **Driver Engine**: State machine implemented (Bootloader/Ready/Error).
-- [x] **IOCTL Interface**: User-space control for state queries and resets.
-- [ ] **Firmware Loading**: Skeleton implemented. Needs protocol headers from `analyze_log.py`.
-- [ ] libfprint integration layer
-
-### ✅ What Works
-- **Device Detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` are registered.
-- **SPI Subsystem**: Driver loads, probes, and establishes SPI communication (Mode 0).
-- **Interrupts**: IRQ handler is registered and fires on sensor touch.
-- **Character Device**: `/dev/opengoodixspi` exists for user-space interaction.
-- **Debug Interface**: `/sys/kernel/debug/opengoodixspi/spi_log` provides real-time traffic logging.
-- **IOCTLs**: Custom IOCTLs implemented to query driver state and force resets.
-- **Firmware Request**: The driver requests `goodix_fp.bin` from `/lib/firmware`.
+- [x] **IOCTL Interface**: Custom IOCTLs implemented to query driver state and force resets.
+- [x] **Firmware Request**: The driver requests `goodix_fp.bin` from `/lib/firmware`.
 
 ### ❌ What is Missing
-- **Firmware Upload Logic**: The driver loads the binary into memory but does not know *how* to send it to the chip (chunk headers, commands, checksums).
-- **Image Capture**: Once initialized, logic to read the fingerprint image is needed.
+- [ ] libfprint integration layer
+- [ ] **Image Capture**: Once initialized, logic to read the fingerprint image is needed.
+- [ ] **Firmware Loading**: Skeleton implemented. Needs protocol headers from `analyze_log.py`.
+- [ ] **Firmware Upload Logic**: The driver loads the binary into memory but does not know *how* to send it to the chip (chunk headers, commands, checksums).
 
 ---
 
