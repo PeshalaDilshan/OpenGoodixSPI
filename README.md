@@ -20,7 +20,7 @@ This is a research-driven engineering project.
 ## 🧩 Current Technical Status
 
 ### ✅ What Works
-- [x] Device Detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` are registered.
+- [x] **Device Detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` are registered.
 - [x] **SPI Subsystem**: Driver loads, probes, and establishes SPI communication (Mode 0).
 - [x] **Interrupt handling**: IRQ handler is registered and fires on sensor touch.
 - [x] **Debug Interface**: `/sys/kernel/debug/opengoodixspi/spi_log` provides real-time traffic logging.
@@ -31,7 +31,7 @@ This is a research-driven engineering project.
 - [x] **Firmware Request**: The driver requests `goodix_fp.bin` from `/lib/firmware`.
 
 ### ❌ What is Missing
-- [ ] libfprint integration layer
+- [ ] **libfprint integration layer**
 - [ ] **Image Capture**: Once initialized, logic to read the fingerprint image is needed.
 - [ ] **Firmware Loading**: Skeleton implemented. Needs protocol headers from `analyze_log.py`.
 - [ ] **Firmware Upload Logic**: The driver loads the binary into memory but does not know *how* to send it to the chip (chunk headers, commands, checksums).
