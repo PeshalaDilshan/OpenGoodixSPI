@@ -17,12 +17,13 @@ This is a research-driven engineering project.
 
 ## 🧩 Current Status
 
-- [ ] Device detection
-- [ ] SPI probe implementation
-- [ ] Interrupt handling
-- [ ] SPI transaction logging
-- [ ] Protocol reverse engineering
-- [ ] Character device interface
+- [x] **Device detection**: ACPI IDs `GXFP5187`, `GXFP3287`, `GXFP51A0` registered.
+- [x] **SPI probe**: Driver loads, allocates resources, and communicates.
+- [x] **Interrupt handling**: IRQ detected and handler registered.
+- [x] **Debug Interface**: `debugfs` logging of raw SPI packets.
+- [x] **User Space**: Character device `/dev/opengoodixspi` for read/write.
+- [x] **Protocol Discovery**: Identified Wake (`0xB0`) and Chip ID (`0xF0`) commands.
+- [ ] **Firmware Loading**: Logic to parse and upload firmware is missing.
 - [ ] libfprint integration layer
 
 ---
@@ -51,22 +52,32 @@ tests/                   # Experimental validation code
 
 ---
 
-## 🔬 Development Roadmap
+## 🕵️ Reverse Engineering Findings
 
-### Phase 1 – Hardware Detection
-- Register SPI driver
-- Confirm probe and remove functions
-- Validate hardware communication
+### Protocol Basics
+- **SPI Mode**: 0 (CPOL=0, CPHA=0)
+- **Packet Structure**: Likely `CMD (1 byte) + ADDR/DATA...`
 
-### Phase 2 – Communication Layer
-- Implement spi_sync transactions
-- Log raw SPI packets
-- Identify handshake patterns
+### Known Commands
+| Command | Name | Description |
+| :--- | :--- | :--- |
+| `0xB0` | **Wake / CS** | Pulls MISO low (Active). Must be sent before other commands. |
+| `0xF0` | **Chip ID** | Returns `00 F0 10 00` on some devices. |
+| `0x0C` | **Soft Reset** | Resets the internal state machine. |
 
-### Phase 3 – Protocol Analysis
-- Map packet structure
-- Identify command types
-- Reverse engineer authentication flow
+### Windows Driver Analysis
+- **Driver Version**: `1.1.124.12` (Huawei / Goodix SPI)
+- **Key DLLs**: `gfspi.dll`, `AlgoMilan.dll`
+- **Firmware**: Likely embedded in `AlgoMilan.dll` or `.data` section of `gfspi.dll`.
+- **Status**: The sensor appears to be in a bootloader state waiting for a firmware blob upload.
+
+---
+
+## 🔬 Next Steps for Contributors
+
+1. **Extract Firmware**: Use `tools/find_firmware.py` on the Windows driver DLLs to locate the firmware blob.
+2. **Implement Upload**: Reverse engineer the upload protocol (likely chunked writes to a specific address).
+3. **Analyze Handshake**: Once firmware is loaded, the device should respond to more commands.
 
 ### Phase 4 – User Space Interface
 - Expose character device
@@ -100,7 +111,7 @@ Once both are running, touch the fingerprint sensor. You should see "Touch detec
 
 ## 🛠 Reverse Engineering Tools
 
-- `tools/live_monitor.py`: Real-time SPI traffic viewer.
+- `tools/live_monitor.py`: Real-time SPI traffic viewer (reads from debugfs).
 - `tools/send_command.py`: Send raw hex bytes to the sensor.
 - `tools/scan_commands.py`: Brute-force scan for valid command opcodes.
 - `tools/scan_addresses.py`: Scan memory addresses for data.
@@ -140,7 +151,7 @@ GPL-2.0 (required for kernel module compatibility)
 
 ## 📌 Target Hardware
 
-Primarily Huawei laptops with Goodix SPI fingerprint sensors.
+Primarily Huawei MateBook series with Goodix SPI fingerprint sensors.
 
 If you have compatible hardware, please open an issue and include:
 

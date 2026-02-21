@@ -22,10 +22,23 @@
 #include <linux/debugfs.h>
 #include <linux/kfifo.h>
 #include <linux/wait.h>
+#include <linux/poll.h>
 
 #define DRIVER_NAME "opengoodixspi"
 #define DRIVER_CLASS "opengoodix"
-#define SPI_BUF_SIZE 128
+#define SPI_BUF_SIZE 4096
+
+static bool debug_enabled = true;
+module_param(debug_enabled, bool, 0644);
+MODULE_PARM_DESC(debug_enabled, "Enable debug logging");
+
+/*
+ * Protocol Constants (Reverse Engineered)
+ * Based on analysis of Windows Driver 1.1.124.12 and live traffic.
+ */
+#define GOODIX_CMD_RESET    0x0C
+#define GOODIX_CMD_WAKE     0xB0
+#define GOODIX_CMD_CHIP_ID  0xF0
 
 /*
  * struct opengoodix_data - Private driver context
@@ -82,6 +95,9 @@ static void opengoodix_log_packet(struct opengoodix_data *data, const char *tag,
 {
 	char msg[128];
 	int msg_len;
+
+	if (!debug_enabled)
+		return;
 
 	/* Log tag and up to 32 bytes of hex data */
 	msg_len = snprintf(msg, sizeof(msg), "%s: %*ph\n", tag, (int)min(len, 32UL), buf);
@@ -180,7 +196,7 @@ static int opengoodix_open(struct inode *inode, struct file *file)
 	data = container_of(inode->i_cdev, struct opengoodix_data, cdev);
 	file->private_data = data;
 
-	return 0;
+	return nonseekable_open(inode, file);
 }
 
 static int opengoodix_release(struct inode *inode, struct file *file)
@@ -267,12 +283,26 @@ out:
 	return ret;
 }
 
+static __poll_t opengoodix_poll(struct file *file, poll_table *wait)
+{
+	struct opengoodix_data *data = file->private_data;
+	__poll_t mask = 0;
+
+	poll_wait(file, &data->wq, wait);
+
+	if (data->data_ready)
+		mask |= EPOLLIN | EPOLLRDNORM;
+
+	return mask;
+}
+
 static const struct file_operations opengoodix_fops = {
 	.owner = THIS_MODULE,
 	.open = opengoodix_open,
 	.release = opengoodix_release,
 	.read = opengoodix_read,
 	.write = opengoodix_write,
+	.poll = opengoodix_poll,
 };
 
 /*
@@ -382,8 +412,13 @@ static int opengoodix_probe(struct spi_device *spi)
 	/* 4. Perform Test Transaction */
 	mutex_lock(&data->lock);
 	
-	/* TODO: Replace with actual initialization command */
-	memset(data->tx_buf, 0xAA, 4); // Dummy pattern
+	/* 
+	 * TODO: Firmware Load Required
+	 * The sensor responds to 0xB0 (Wake) and 0xF0 (Chip ID) but returns 0x00
+	 * for most registers. This suggests it is in "Bootloader" mode and needs
+	 * firmware uploaded before it will function as a biometric device.
+	 */
+	memset(data->tx_buf, GOODIX_CMD_CHIP_ID, 4); 
 	
 	ret = opengoodix_spi_xfer(data, 4);
 	if (ret == 0) {
