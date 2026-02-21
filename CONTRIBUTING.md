@@ -1,5 +1,16 @@
 # Contributing to OpenGoodixSPI
 
+## Project Status
+
+OpenGoodixSPI is currently in maintenance mode.
+
+Core detection and logging infrastructure is complete.
+Protocol reverse engineering remains ongoing.
+
+Active development is paused while primary focus is directed toward other production projects.
+
+Contributions are welcome.
+
 Thank you for your interest in contributing.
 
 ## Before You Start
