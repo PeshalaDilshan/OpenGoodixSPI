@@ -429,10 +429,7 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
 	 * TODO: Configure Chunk Size
 	 * Check analyze_log.py output. Common values: 64, 128, 256.
 	 */
-	chunk_size = 128;
-
-	for (offset = 0; offset < fw->size; offset += chunk_size) {
-		payload_len = min(chunk_size, fw->size - offset);
+	
 
 		/*
 		 * TODO: REVERSE ENGINEERED PROTOCOL GOES HERE
@@ -452,7 +449,6 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
 		 *     break;
 		 * }
 		 */
-	}
 
 	/*
 	 * TODO: Handshake / Checksum Verification
@@ -475,10 +471,6 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
 	 *
 	 * dev_info(data->dev, "Firmware verified and booted!\n");
 	 */
-	
-	release_firmware(fw);
-	return 0;
-}
 
 static int opengoodix_check_chip_state(struct opengoodix_data *data)
 {
