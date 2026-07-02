@@ -378,28 +378,58 @@ static int opengoodix_reset_device(struct opengoodix_data *data)
 
 static int opengoodix_load_firmware(struct opengoodix_data *data)
 {
-	const struct firmware *fw;
-	size_t offset, chunk_size, payload_len;
-	u8 *tx = data->tx_buf;
-	int ret;
+    const struct firmware *fw;
+    size_t offset, chunk_size = 128;  // Adjustable after analysis
+    u8 *tx = data->tx_buf;
+    int ret, retries = 3;
 
-	dev_info(data->dev, "Requesting firmware: goodix_fp.bin\n");
-	ret = request_firmware(&fw, "goodix_fp.bin", data->dev);
-	if (ret) {
-		dev_warn(data->dev, "Firmware 'goodix_fp.bin' not found (err=%d). Device may not function.\n", ret);
-		return ret;
-	}
+    dev_info(data->dev, "Requesting firmware goodix_fp.bin\n");
+    ret = request_firmware(&fw, "goodix_fp.bin", data->dev);
+    if (ret) {
+        dev_err(data->dev, "Firmware request failed: %d\n", ret);
+        return ret;
+    }
 
-	dev_info(data->dev, "Firmware found, size: %zu bytes. Starting upload...\n", fw->size);
+    dev_info(data->dev, "Uploading firmware (%zu bytes)...\n", fw->size);
 
+    for (offset = 0; offset < fw->size; offset += chunk_size) {
+        size_t payload_len = min(chunk_size, fw->size - offset);
+
+        /* TODO: Replace with actual protocol from analyze_log.py */
+        memset(tx, 0, SPI_BUF_SIZE);
+        tx[0] = 0xF1;                    // Example Write Command
+        tx[1] = (offset >> 8) & 0xFF;    // Addr High
+        tx[2] = offset & 0xFF;           // Addr Low
+        tx[3] = 0x00;                    // Flags / Length byte
+        memcpy(&tx[4], fw->data + offset, payload_len);
+
+        ret = opengoodix_spi_xfer(data, 4 + payload_len);
+        if (ret) {
+            dev_err(data->dev, "Upload failed at offset 0x%zx\n", offset);
+            if (--retries == 0) break;
+            msleep(50);
+            continue;
+        }
+
+        if ((offset % (chunk_size * 8)) == 0)
+            dev_info(data->dev, "Uploaded %zu/%zu bytes\n", offset + payload_len, fw->size);
+    }
+
+    /* TODO: Add finalize / checksum command here */
+    dev_info(data->dev, "Firmware upload completed. Running handshake...\n");
+    // Example handshake placeholder
+    msleep(100);
+
+    release_firmware(fw);
+    data->firmware_loaded = true;
+    data->state = STATE_READY;
+    return 0;
+}
 	/*
 	 * TODO: Configure Chunk Size
 	 * Check analyze_log.py output. Common values: 64, 128, 256.
 	 */
-	chunk_size = 128;
-
-	for (offset = 0; offset < fw->size; offset += chunk_size) {
-		payload_len = min(chunk_size, fw->size - offset);
+	
 
 		/*
 		 * TODO: REVERSE ENGINEERED PROTOCOL GOES HERE
@@ -419,7 +449,6 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
 		 *     break;
 		 * }
 		 */
-	}
 
 	/*
 	 * TODO: Handshake / Checksum Verification
@@ -442,10 +471,6 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
 	 *
 	 * dev_info(data->dev, "Firmware verified and booted!\n");
 	 */
-	
-	release_firmware(fw);
-	return 0;
-}
 
 static int opengoodix_check_chip_state(struct opengoodix_data *data)
 {
