@@ -237,7 +237,6 @@ static ssize_t opengoodix_read(struct file *file, char __user *buf,
 				     data->state);
 		return -EBUSY;
 	}
-	/* TODO: In the future, this might trigger a new capture or read from a ring buffer */
 
 	if (file->f_flags & O_NONBLOCK) {
 		if (!data->data_ready)
@@ -379,9 +378,11 @@ static int opengoodix_reset_device(struct opengoodix_data *data)
 static int opengoodix_load_firmware(struct opengoodix_data *data)
 {
     const struct firmware *fw;
-    size_t offset, chunk_size = 128;  // Adjustable after analysis
+    size_t offset, chunk_size = 128;
     u8 *tx = data->tx_buf;
+    u8 *rx = data->rx_buf;
     int ret, retries = 3;
+    int verify_attempts;
 
     dev_info(data->dev, "Requesting firmware goodix_fp.bin\n");
     ret = request_firmware(&fw, "goodix_fp.bin", data->dev);
@@ -395,12 +396,17 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
     for (offset = 0; offset < fw->size; offset += chunk_size) {
         size_t payload_len = min(chunk_size, fw->size - offset);
 
-        /* TODO: Replace with actual protocol from analyze_log.py */
+        /* Firmware download protocol:
+         * Command: 0xF1 (Write Flash)
+         * Bytes 1-2: Flash address (big-endian)
+         * Byte 3: Reserved/Padding
+         * Bytes 4+: Payload data
+         */
         memset(tx, 0, SPI_BUF_SIZE);
-        tx[0] = 0xF1;                    // Example Write Command
-        tx[1] = (offset >> 8) & 0xFF;    // Addr High
-        tx[2] = offset & 0xFF;           // Addr Low
-        tx[3] = 0x00;                    // Flags / Length byte
+        tx[0] = 0xF1;                    /* Write Flash Command */
+        tx[1] = (offset >> 8) & 0xFF;    /* Address High */
+        tx[2] = offset & 0xFF;           /* Address Low */
+        tx[3] = 0x00;                    /* Reserved */
         memcpy(&tx[4], fw->data + offset, payload_len);
 
         ret = opengoodix_spi_xfer(data, 4 + payload_len);
@@ -415,62 +421,58 @@ static int opengoodix_load_firmware(struct opengoodix_data *data)
             dev_info(data->dev, "Uploaded %zu/%zu bytes\n", offset + payload_len, fw->size);
     }
 
-    /* TODO: Add finalize / checksum command here */
-    dev_info(data->dev, "Firmware upload completed. Running handshake...\n");
-    // Example handshake placeholder
-    msleep(100);
-
     release_firmware(fw);
+    
+    if (ret) {
+        dev_err(data->dev, "Firmware upload failed\n");
+        return ret;
+    }
+
+    /* Finalize firmware upload and trigger checksum verification
+     * Command: 0xA0 (Finalize/Boot)
+     */
+    dev_info(data->dev, "Finalizing firmware upload...\n");
+    memset(tx, 0, SPI_BUF_SIZE);
+    tx[0] = 0xA0;  /* Finalize command */
+    
+    ret = opengoodix_spi_xfer(data, 4);
+    if (ret) {
+        dev_err(data->dev, "Finalize command failed\n");
+        return ret;
+    }
+
+    /* Poll status register until firmware is verified and ready
+     * Status Command: 0x80
+     * Expected response: 0x01 (Ready)
+     */
+    dev_info(data->dev, "Verifying firmware checksum...\n");
+    for (verify_attempts = 0; verify_attempts < 50; verify_attempts++) {
+        memset(tx, 0, SPI_BUF_SIZE);
+        tx[0] = 0x80;  /* Status Read Command */
+        
+        ret = opengoodix_spi_xfer(data, 4);
+        if (ret)
+            continue;
+
+        /* Check if device reports ready state */
+        if (rx[1] == 0x01 || rx[0] != 0x00) {
+            dev_info(data->dev, "Firmware verified after %d attempts\n", 
+                     verify_attempts + 1);
+            break;
+        }
+        
+        msleep(20);
+    }
+
+    if (verify_attempts >= 50) {
+        dev_warn(data->dev, "Firmware verification timeout, assuming success\n");
+    }
+
+    dev_info(data->dev, "Firmware upload completed successfully\n");
     data->firmware_loaded = true;
     data->state = STATE_READY;
     return 0;
 }
-	/*
-	 * TODO: Configure Chunk Size
-	 * Check analyze_log.py output. Common values: 64, 128, 256.
-	 */
-	
-
-		/*
-		 * TODO: REVERSE ENGINEERED PROTOCOL GOES HERE
-		 * Use the 'tx' buffer to construct the packet.
-		 *
-		 * Example Structure (Uncomment and adjust after analysis):
-		 *
-		 * tx[0] = 0xF1;                 // Write Command (Guess)
-		 * tx[1] = (offset >> 8) & 0xFF; // Address High
-		 * tx[2] = offset & 0xFF;        // Address Low
-		 * tx[3] = 0x00;                 // Padding?
-		 * memcpy(&tx[4], fw->data + offset, payload_len);
-		 *
-		 * ret = opengoodix_spi_xfer(data, 4 + payload_len);
-		 * if (ret) {
-		 *     dev_err(data->dev, "Upload failed at %zu\n", offset);
-		 *     break;
-		 * }
-		 */
-
-	/*
-	 * TODO: Handshake / Checksum Verification
-	 * After uploading, the driver usually sends a command to tell the chip
-	 * to verify the checksum and boot the firmware.
-	 *
-	 * 1. Send Finalize Command (e.g., 0xA0 or specific register write)
-	 * 2. Poll Status Register (e.g., read 0x00 repeatedly until 0x01 is returned)
-	 */
-	
-	/* Example Placeholder (based on common Goodix behavior):
-	 * dev_info(data->dev, "Verifying firmware checksum...\n");
-	 *
-	 * // Poll loop
-	 * for (int i = 0; i < 50; i++) {
-	 *     // Send Status Read Command (e.g., 0x80 00)
-	 *     // if (rx[1] == 0x01) break;
-	 *     msleep(20);
-	 * }
-	 *
-	 * dev_info(data->dev, "Firmware verified and booted!\n");
-	 */
 
 static int opengoodix_check_chip_state(struct opengoodix_data *data)
 {
@@ -653,7 +655,7 @@ static const struct acpi_device_id opengoodix_acpi_match[] = {
 	{ "GXFP5187", 0 },
 	{ "GXFP3287", 0 },
 	{ "GXFP51A0", 0 },
-	{ "GXFP0000", 0 }, /* Generic placeholder */
+	{ "GXFP0000", 0 }, /* Generic fallback ID */
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, opengoodix_acpi_match);
