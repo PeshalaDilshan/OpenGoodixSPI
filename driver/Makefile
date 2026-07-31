@@ -13,10 +13,10 @@ ccflags-y := -I$(src) -Wall -Wextra
 all: modules
 
 modules:
-	$(MAKE) -C \( (KERNEL_DIR) M= \)(PWD) modules
+	$(MAKE) -C $(KERNEL_DIR) M=$(PWD) modules
 
 clean:
-	$(MAKE) -C \( (KERNEL_DIR) M= \)(PWD) clean
+	$(MAKE) -C $(KERNEL_DIR) M=$(PWD) clean
 	rm -f *.o *.ko *.mod.c modules.order Module.symvers
 
 load: modules
