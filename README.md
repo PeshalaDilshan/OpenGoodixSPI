@@ -1,14 +1,30 @@
 # OpenGoodixSPI
 
-This project is an experimental, open-source Linux kernel driver for Goodix SPI fingerprint sensors found in many Huawei MateBooks and other laptops.
+This project is an experimental, open-source Linux kernel driver for Goodix fingerprint sensors found in many Huawei MateBooks and other laptops.
+
+**⚠️ IMPORTANT HARDWARE COMPATIBILITY NOTICE (July 2026)**
+
+Recent reverse engineering has revealed **critical hardware differences** between Goodix sensor variants:
+
+### 🔴 GXFP51B7 (MateBook X Pro 2020) - NOT SUPPORTED
+- **This is NOT an SPI device** - it's an ACPI platform device with EC-bridged MMIO mailbox
+- Requires a **platform driver**, not `spi_driver`
+- Uses TLS-PSK encryption with SGX-sealed keys (per-device, CPU-bound)
+- Full authentication is **not achievable on Linux** without vendor cooperation
+- See Issue #16 for complete protocol analysis and why this hardware is blocked
+
+### 🟢 Supported Devices (SPI-based)
+- GXFP5187, GXFP3287, GXFP51A0 and similar SPI variants
+- These devices use direct SPI communication (Mode 0)
+- This driver targets these SPI-based sensors only
 
 **The original author has postponed development. The codebase is stable, compiles, and loads, but requires specific protocol reverse-engineering to become functional. We welcome any contributors to pick up the torch!**
 
 ## 🎯 Mission
 
-Many Huawei laptops ship with Goodix SPI fingerprint sensors that work on Windows but lack proper Linux support. OpenGoodixSPI aims to:
+Many Huawei laptops ship with Goodix fingerprint sensors that work on Windows but lack proper Linux support. OpenGoodixSPI aims to:
 
-- Develop a clean SPI-based Linux kernel driver
+- Develop a clean Linux kernel driver for **SPI-based** Goodix sensors
 - Reverse engineer protocol communication safely
 - Enable future integration with libfprint
 - Create a structured path toward upstream support
@@ -35,6 +51,20 @@ This is a research-driven engineering project.
 - [ ] **Image Capture**: Once initialized, logic to read the fingerprint image is needed.
 - [ ] **Firmware Loading**: Skeleton implemented. Needs protocol headers from `analyze_log.py`.
 - [ ] **Firmware Upload Logic**: The driver loads the binary into memory but does not know *how* to send it to the chip (chunk headers, commands, checksums).
+
+### ⚠️ Known Hardware Limitations
+
+| Device | Laptop Model | Bus Type | Status |
+| :--- | :--- | :--- | :--- |
+| GXFP5187/3287/51A0 | Various MateBooks | SPI | ✅ Supported (this driver) |
+| **GXFP51B7** | **MateBook X Pro 2020** | **EC Mailbox (MMIO)** | ❌ **Not supported - different hardware architecture** |
+| 27c6:51x7/5503 | MateBook 13 2021+ | USB | ✅ Works via existing USB drivers |
+
+**Why GXFP51B7 cannot use this driver:**
+- No `SpiSerialBus` resource in ACPI - uses Memory32Fixed + GpioInt instead
+- Communicates through EC shared memory mailbox at 0x40200000
+- Requires platform driver binding, not spi_driver
+- Even with correct driver, TLS-PSK authentication is blocked by SGX sealing
 
 ---
 
@@ -227,3 +257,34 @@ If you have compatible hardware, please open an issue and include:
 ## 🔥 Vision
 
 “A structured effort to bridge unsupported biometric hardware into the Linux ecosystem through open, maintainable kernel engineering.”
+
+---
+
+## 📚 References & Research
+
+### GXFP51B7 Protocol Analysis (Issue #16)
+
+Complete reverse engineering of the GXFP51B7 sensor in MateBook X Pro 2020:
+
+- **Hardware Architecture**: EC-bridged MMIO mailbox at 0x40200000 (32KB window)
+- **Transport Layer**: Host → EC shared memory → EC → SPI → Goodix MCU
+- **Command Protocol**: Fully documented packet format with checksums
+- **Security Blocker**: TLS-PSK with SGX-sealed keys (per-device, CPU-bound)
+- **Authentication**: Requires RSA-2048 signed provisioning blobs from Goodix
+
+**Key Findings:**
+1. The sensor is **not an SPI slave** - it's a platform device requiring ACPI binding
+2. Layer A (mailbox transport) works - CHIP-ID command returns 0xE1E0
+3. Layer B (TLS-PSK) is blocked - PSK sealed to Intel SGX enclave
+4. No trust-on-first-use hole (unlike USB Goodix parts)
+5. Provisioning requires Goodix factory RSA private key
+
+See [Issue #16](https://github.com/PeshalaDilshan/OpenGoodixSPI/issues/16) for complete technical analysis.
+
+### Related Projects
+
+- **libfprint #112**: SPI Goodix protocol discussion (2020)
+- **libfprint-goodixtls**: Working driver for USB Goodix sensors
+- **goodix-fp-linux-dev**: USB Goodix reverse engineering tools
+
+---
