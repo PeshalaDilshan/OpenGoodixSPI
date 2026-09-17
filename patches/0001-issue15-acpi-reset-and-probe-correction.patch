@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenGoodixSPI Contributors <>
+Date: Thu, 17 Sep 2026 00:00:00 +0000
+Subject: [PATCH] driver: acquire GXFP51A0 reset GPIO from ACPI _CRS
+
+Issue #15 established that GXFP51A0 systems expose the reset GpioIo at
+ACPI _CRS index 1 while the GpioInt is index 0. The old driver did not
+consume the reset GPIO at all and therefore probed the sensor before the
+board-level reset sequence had been performed.
+
+This patch records the validated board-level part of the fix without
+inventing the still-unknown wake/bootloader protocol:
+
+* map ACPI GPIO index 1 to a named reset-gpios consumer
+* acquire the reset GPIO as an output-high line
+* pulse reset low for 10 ms and return it high for 100 ms before SPI probing
+* replace the old 0xF0 "chip ID" label with the observed 0x82 register-read
+  form
+* do not automatically upload firmware merely because a probe looks like
+  0xff; the Windows evidence shows the affected part already carries the
+  expected application firmware
+
+The wake/bootloader handshake remains intentionally unresolved.
+
+---
+ driver/opengoodixspi.c | 39 +++++++++++++++++++++++++++++++--------
+ 1 file changed, 31 insertions(+), 8 deletions(-)
+
+--- a/driver/opengoodixspi.c
++++ b/driver/opengoodixspi.c
+@@ -18,6 +18,7 @@
+ #include <linux/firmware.h>
+ #include <linux/delay.h>
++#include <linux/gpio/consumer.h>
+ 
+ #include "opengoodix.h"
+@@ -36,7 +37,7 @@
+  * Based on analysis of Windows Driver 1.1.124.12 and live traffic.
+  */
+ #define GOODIX_CMD_RESET    0x0C
+ #define GOODIX_CMD_WAKE     0xB0
+-#define GOODIX_CMD_CHIP_ID  0xF0
++#define GOODIX_CMD_CHIP_ID  0x82
+@@ -81,6 +82,7 @@ struct opengoodix_data {
+ 	/* Interrupt Handling */
+ 	wait_queue_head_t wq;
+ 	bool data_ready;
++	struct gpio_desc *reset_gpio;
+ 
+ 	/* Data buffers (DMA safe) */
+ 	u8 *tx_buf;
+@@ -489,6 +491,8 @@ static int opengoodix_probe(struct spi_device *spi)
+ 	struct opengoodix_data *data;
+ 	struct device *dev = &spi->dev;
++	static const struct acpi_gpio_params reset = { 1, 0, false };
++	static const struct acpi_gpio_mapping gpios[] = {
++		{ "reset-gpios", &reset, 1 }, { }
++	};
+ 	int ret;
+@@ -507,6 +511,20 @@ static int opengoodix_probe(struct spi_device *spi)
+ 	if (ret)
+ 		return ret;
+ 
++	/*
++	 * GXFP51A0 exposes GpioInt at _CRS index 0 and the sensor reset
++	 * GpioIo at index 1. Map the latter before using the GPIO consumer API.
++	 */
++	ret = devm_acpi_dev_add_driver_gpios(dev, gpios);
++	if (ret) {
++		dev_err(dev, "Failed to add ACPI GPIO mapping: %d\n", ret);
++		return ret;
++	}
++
++	data->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(data->reset_gpio)) {
++		ret = PTR_ERR(data->reset_gpio);
++		dev_err(dev, "Failed to acquire reset GPIO: %d\n", ret);
++		return ret;
++	}
++
++	dev_info(dev, "Asserting sensor reset GPIO\n");
++	gpiod_set_value_cansleep(data->reset_gpio, 0);
++	msleep(10);
++	gpiod_set_value_cansleep(data->reset_gpio, 1);
++	msleep(100);
++
+ 	spi_set_drvdata(spi, data);
+@@ -547,9 +565,14 @@ static int opengoodix_probe(struct spi_device *spi)
+ 		/* Don't fail probe, user might be able to fix via write/ioctl */
+ 	}
+ 
+-	if (data->state == STATE_BOOTLOADER)
+-		opengoodix_load_firmware(data);
++	/*
++	 * Do not automatically upload firmware here. Issue #15 shows that the
++	 * GXFP51A0 application firmware is already present on affected Windows
++	 * systems, while the Linux wake/bootloader transaction is still unknown.
++	 * Treating an all-FF response as proof of a firmware-update state would
++	 * risk sending an unverified flash protocol to the sensor.
++	 */
++	if (data->state == STATE_BOOTLOADER)
++		dev_warn(dev, "Device did not reach application state; wake/bootloader sequence is unresolved\n");
+ 
+ 	mutex_unlock(&data->lock);
+*** End Patch
